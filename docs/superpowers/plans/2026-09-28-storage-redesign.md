@@ -50,3 +50,6 @@
 - [ ] Add test harness to solution/workflow.
 - [ ] Build, run tests, publish self-contained win-x64, upload artifact.
 - [ ] Merge only after feature-branch CI is green.
+
+
+Execution status: RED test harness committed; awaiting first CI compile gate.
