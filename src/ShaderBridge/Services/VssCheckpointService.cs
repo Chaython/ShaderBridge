@@ -12,7 +12,7 @@ public sealed class VssCheckpointService
 
     public static string? GetVolumeRoot(string path)
     {
-        if (string.IsNullOrWhiteSpace(path) || path.StartsWith(@"\", StringComparison.Ordinal))
+        if (string.IsNullOrWhiteSpace(path) || path.StartsWith(@"\\", StringComparison.Ordinal))
             return null;
 
         try
@@ -39,7 +39,7 @@ public sealed class VssCheckpointService
 
         var full = Path.GetFullPath(livePath);
         var relative = full[volumeRoot.Length..].TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        return shadowDeviceObject.TrimEnd('\') + "\" + relative;
+        return shadowDeviceObject.TrimEnd('\\') + "\\" + relative;
     }
 
     public VssTransitionState? Load(string storeRoot)
@@ -150,19 +150,18 @@ public sealed class VssCheckpointService
 
         var escapedVolume = volumeRoot.Replace("'", "''");
         var escapedResult = resultPath.Replace("'", "''");
-        var script = $"""
-$ErrorActionPreference = 'Stop'
-$class = [wmiclass]'root\cimv2:Win32_ShadowCopy'
-$result = $class.Create('{escapedVolume}', 'ClientAccessible')
-if ($result.ReturnValue -ne 0) {{ throw "Win32_ShadowCopy.Create returned $($result.ReturnValue)." }}
-$shadow = Get-WmiObject Win32_ShadowCopy | Where-Object {{ $_.ID -eq $result.ShadowID }} | Select-Object -First 1
-if ($null -eq $shadow) {{ throw 'Created shadow copy could not be queried.' }}
-[pscustomobject]@{{
-    VolumeRoot = '{escapedVolume}'
-    ShadowId = [string]$result.ShadowID
-    DeviceObject = [string]$shadow.DeviceObject
-}} | ConvertTo-Json -Compress | Set-Content -LiteralPath '{escapedResult}' -Encoding UTF8
-""";
+        var script = string.Join(Environment.NewLine,
+            "$ErrorActionPreference = 'Stop'",
+            "$class = [wmiclass]'root\\cimv2:Win32_ShadowCopy'",
+            $"$result = $class.Create('{escapedVolume}', 'ClientAccessible')",
+            "if ($result.ReturnValue -ne 0) { throw \"Win32_ShadowCopy.Create returned $($result.ReturnValue).\" }",
+            "$shadow = Get-WmiObject Win32_ShadowCopy | Where-Object { $_.ID -eq $result.ShadowID } | Select-Object -First 1",
+            "if ($null -eq $shadow) { throw 'Created shadow copy could not be queried.' }",
+            "[pscustomobject]@{",
+            $"    VolumeRoot = '{escapedVolume}'",
+            "    ShadowId = [string]$result.ShadowID",
+            "    DeviceObject = [string]$shadow.DeviceObject",
+            $"}} | ConvertTo-Json -Compress | Set-Content -LiteralPath '{escapedResult}' -Encoding UTF8");
 
         await File.WriteAllTextAsync(scriptPath, script, ct);
         try
@@ -187,14 +186,14 @@ if ($null -eq $shadow) {{ throw 'Created shadow copy could not be queried.' }}
         Directory.CreateDirectory(tempRoot);
         var scriptPath = Path.Combine(tempRoot, "delete-shadow.ps1");
         var id = shadow.ShadowId.Trim().Trim('{', '}');
-        var volume = shadow.VolumeRoot.TrimEnd('\');
+        var volume = shadow.VolumeRoot.TrimEnd('\\');
         var vssadmin = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "System32", "vssadmin.exe");
         var escapedExe = vssadmin.Replace("'", "''");
-        var script = $"""
-$ErrorActionPreference = 'Stop'
-$p = Start-Process -FilePath '{escapedExe}' -ArgumentList @('delete','shadows','/for={volume}','/shadow={id}','/quiet') -Wait -PassThru -WindowStyle Hidden
-if ($p.ExitCode -ne 0) {{ throw "vssadmin exited with code $($p.ExitCode)." }}
-""";
+
+        var script = string.Join(Environment.NewLine,
+            "$ErrorActionPreference = 'Stop'",
+            $"$p = Start-Process -FilePath '{escapedExe}' -ArgumentList @('delete','shadows','/for={volume}','/shadow={id}','/quiet') -Wait -PassThru -WindowStyle Hidden",
+            "if ($p.ExitCode -ne 0) { throw \"vssadmin exited with code $($p.ExitCode).\" }");
 
         await File.WriteAllTextAsync(scriptPath, script, ct);
         try
