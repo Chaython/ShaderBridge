@@ -34,12 +34,22 @@
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
-                    <StackPanel Grid.Row="0" Orientation="Horizontal">
-                        <Button Content="Scan caches" Click="ScanCaches_Click"/>
-                        <Button Content="Create snapshot" Click="CreateSnapshot_Click"/>
-                        <Button Content="Open store" Click="OpenStore_Click"/>
-                        <CheckBox x:Name="WatchCheckBox" Content="Watch cache activity" Margin="8,6,0,8" Checked="WatchCheckBox_Changed" Unchecked="WatchCheckBox_Changed"/>
-                    </StackPanel>
+                    <Grid Grid.Row="0">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+                        <StackPanel Grid.Row="0" Orientation="Horizontal">
+                            <Button Content="Scan caches" Click="ScanCaches_Click"/>
+                            <Button Content="Create snapshot" Click="CreateSnapshot_Click"/>
+                            <Button Content="Arm driver update (VSS)" Click="ArmDriverUpdate_Click"/>
+                            <Button Content="Release VSS checkpoint" Click="ReleaseVssCheckpoint_Click"/>
+                            <Button Content="Open store" Click="OpenStore_Click"/>
+                            <CheckBox x:Name="WatchCheckBox" Content="Watch cache activity" Margin="8,6,0,8" Checked="WatchCheckBox_Changed" Unchecked="WatchCheckBox_Changed"/>
+                        </StackPanel>
+                        <TextBlock Grid.Row="1" x:Name="VssStatusText" Margin="0,0,0,8" Opacity="0.75"
+                                   Text="VSS checkpoint: none"/>
+                    </Grid>
                     <DataGrid Grid.Row="1" x:Name="CacheGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionMode="Extended">
                         <DataGrid.Columns>
                             <DataGridCheckBoxColumn Header="Found" Binding="{Binding Exists}" Width="60"/>
@@ -139,7 +149,7 @@
                     <StackPanel Margin="12" MaxWidth="900" HorizontalAlignment="Left">
                         <GroupBox Header="Snapshot store">
                             <StackPanel>
-                                <TextBlock Text="Content-addressed object store. Identical cache files are stored only once." Margin="0,0,0,6"/>
+                                <TextBlock Text="4 MiB content-addressed chunk store. Unchanged blocks across large cache files are stored only once." Margin="0,0,0,6"/>
                                 <TextBox x:Name="StoreRootText" Width="820"/>
                             </StackPanel>
                         </GroupBox>
