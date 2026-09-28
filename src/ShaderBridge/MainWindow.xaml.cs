@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Windows;
 using System.Windows.Threading;
+using MessageBox = System.Windows.MessageBox;
 using ShaderBridge.Models;
 using ShaderBridge.Services;
 
