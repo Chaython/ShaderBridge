@@ -102,4 +102,4 @@ This first version snapshots whole files. A future version can add chunk-level d
 
 ## GitHub Actions build
 
-The included `.github/workflows/build.yml` builds on `windows-latest` and uploads a self-contained `ShaderBridge-win-x64` artifact on pushes, pull requests, or manual workflow runs.
+The included `.github/workflows/build.yml` builds on `windows-latest` and uploads a self-contained `ShaderBridge-win-x64` artifact on pushes, pull requests, or manual workflow runs. CI artifacts can be downloaded from the corresponding GitHub Actions run.
