@@ -1,3 +1,5 @@
+using System.IO;
+
 namespace ShaderBridge.Services;
 
 public sealed class CacheActivityWatcher : IDisposable
