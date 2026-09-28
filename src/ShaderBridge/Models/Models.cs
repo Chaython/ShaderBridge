@@ -32,6 +32,7 @@ public sealed record CacheRoot(string Name, string Path, string Kind, bool Exist
 
 public sealed class SnapshotManifest
 {
+    public int FormatVersion { get; set; } = 1;
     public string Id { get; set; } = Guid.NewGuid().ToString("N");
     public DateTime CreatedUtc { get; set; } = DateTime.UtcNow;
     public string DriverFingerprint { get; set; } = string.Empty;
@@ -54,6 +55,12 @@ public sealed class SnapshotManifest
     }
 }
 
+public sealed class SnapshotChunk
+{
+    public string Sha256 { get; set; } = string.Empty;
+    public int Size { get; set; }
+}
+
 public sealed class SnapshotFile
 {
     public string RootName { get; set; } = string.Empty;
@@ -63,6 +70,7 @@ public sealed class SnapshotFile
     public string Sha256 { get; set; } = string.Empty;
     public long Size { get; set; }
     public DateTime LastWriteUtc { get; set; }
+    public List<SnapshotChunk> Chunks { get; set; } = [];
     public string OriginalPath => Path.Combine(RootPath, RelativePath);
 }
 
@@ -108,4 +116,21 @@ public sealed record VulkanDeviceInfo(
     public string UuidHex => Convert.ToHexString(PipelineCacheUuid);
     public string VendorHex => $"0x{VendorId:X4}";
     public string DeviceHex => $"0x{DeviceId:X4}";
+}
+
+
+public sealed class VssShadowCheckpoint
+{
+    public string VolumeRoot { get; set; } = string.Empty;
+    public string ShadowId { get; set; } = string.Empty;
+    public string DeviceObject { get; set; } = string.Empty;
+}
+
+public sealed class VssTransitionState
+{
+    public DateTime CreatedUtc { get; set; } = DateTime.UtcNow;
+    public string DriverFingerprint { get; set; } = string.Empty;
+    public List<VssShadowCheckpoint> Shadows { get; set; } = [];
+    public List<string> Errors { get; set; } = [];
+    public bool IsActive => Shadows.Count > 0;
 }

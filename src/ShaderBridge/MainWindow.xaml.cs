@@ -13,6 +13,7 @@ public partial class MainWindow : Window
     private readonly DriverService _driverService = new();
     private readonly CacheDiscoveryService _cacheDiscovery = new();
     private readonly SnapshotService _snapshotService = new();
+    private readonly VssCheckpointService _vssCheckpoint = new();
     private readonly CacheActivityWatcher _watcher = new();
     private readonly VulkanPipelineCacheService _vulkanCache = new();
     private readonly VulkanProbe _vulkanProbe = new();
@@ -32,6 +33,7 @@ public partial class MainWindow : Window
         CacheGrid.ItemsSource = _cacheRoots;
         SnapshotsList.ItemsSource = _snapshots;
         _snapshotService.Log += Log;
+        _vssCheckpoint.Log += Log;
         _watcher.Activity += Log;
         LoadSettingsToUi();
         ConfigureTray();
@@ -43,6 +45,7 @@ public partial class MainWindow : Window
     {
         RefreshDrivers(initial: true);
         RefreshSnapshots();
+        RefreshVssStatus();
         await ScanCachesAsync();
         await EnsureBaselineSnapshotAsync();
         ProbeVulkanDevices();

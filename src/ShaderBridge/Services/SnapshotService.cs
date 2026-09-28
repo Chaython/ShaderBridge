@@ -7,6 +7,7 @@ namespace ShaderBridge.Services;
 public sealed class SnapshotService
 {
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
+    private readonly ChunkStore _chunkStore = new();
     public event Action<string>? Log;
 
     public async Task<SnapshotManifest> CreateAsync(
@@ -15,11 +16,11 @@ public sealed class SnapshotService
         IReadOnlyList<GpuDriverInfo> drivers,
         CancellationToken ct = default)
     {
-        Directory.CreateDirectory(ObjectRoot(storeRoot));
         Directory.CreateDirectory(ManifestRoot(storeRoot));
 
         var manifest = new SnapshotManifest
         {
+            FormatVersion = 2,
             Drivers = drivers.ToList(),
             DriverFingerprint = string.Join("||", drivers.Select(d => d.Fingerprint))
         };
@@ -32,14 +33,7 @@ public sealed class SnapshotService
                 try
                 {
                     var info = new FileInfo(file);
-                    var hash = await ComputeSha256Async(file, ct);
-                    var objectPath = ObjectPath(storeRoot, hash);
-                    if (!File.Exists(objectPath))
-                    {
-                        Directory.CreateDirectory(Path.GetDirectoryName(objectPath)!);
-                        await CopyStableAsync(file, objectPath, ct);
-                        Log?.Invoke($"Stored {hash[..12]}…  {file}");
-                    }
+                    var stored = await _chunkStore.StoreFileDetailedAsync(file, storeRoot, ct);
 
                     manifest.Files.Add(new SnapshotFile
                     {
@@ -47,10 +41,17 @@ public sealed class SnapshotService
                         RootPath = root.Path,
                         RelativePath = Path.GetRelativePath(root.Path, file),
                         Kind = root.Kind,
-                        Sha256 = hash,
-                        Size = info.Length,
-                        LastWriteUtc = info.LastWriteTimeUtc
+                        Sha256 = stored.FullSha256,
+                        Size = stored.Size,
+                        LastWriteUtc = info.LastWriteTimeUtc,
+                        Chunks = stored.Chunks.Select(c => new SnapshotChunk
+                        {
+                            Sha256 = c.Sha256,
+                            Size = c.Size
+                        }).ToList()
                     });
+
+                    Log?.Invoke($"Stored {stored.Chunks.Count:N0} chunks ({FormatBytes(stored.Size)})  {file}");
                 }
                 catch (OperationCanceledException) { throw; }
                 catch (Exception ex)
@@ -137,12 +138,22 @@ public sealed class SnapshotService
                 continue;
             }
             if (File.Exists(item.OriginalPath)) { skipped++; continue; }
+
             try
             {
-                var objectPath = ObjectPath(storeRoot, item.Sha256);
-                if (!File.Exists(objectPath)) { failed++; continue; }
                 Directory.CreateDirectory(Path.GetDirectoryName(item.OriginalPath)!);
-                await CopyStableAsync(objectPath, item.OriginalPath, ct);
+
+                if (manifest.FormatVersion >= 2)
+                {
+                    await _chunkStore.RehydrateAsync(item.Chunks, item.OriginalPath, storeRoot, ct);
+                }
+                else
+                {
+                    var objectPath = LegacyObjectPath(storeRoot, item.Sha256);
+                    if (!File.Exists(objectPath)) { failed++; continue; }
+                    await CopyStableAsync(objectPath, item.OriginalPath, ct);
+                }
+
                 try { File.SetLastWriteTimeUtc(item.OriginalPath, item.LastWriteUtc); } catch { }
                 restored++;
                 Log?.Invoke($"Restored missing cache file: {item.OriginalPath}");
@@ -158,14 +169,22 @@ public sealed class SnapshotService
 
     public (long Objects, long Bytes) GetStoreStats(string storeRoot)
     {
-        var root = ObjectRoot(storeRoot);
-        if (!Directory.Exists(root)) return (0, 0);
-        long count = 0, bytes = 0;
-        foreach (var file in EnumerateFilesSafe(root))
+        var chunks = _chunkStore.GetStats(storeRoot);
+        var legacy = LegacyObjectRoot(storeRoot);
+        long legacyCount = 0, legacyBytes = 0;
+        if (Directory.Exists(legacy))
         {
-            try { count++; bytes += new FileInfo(file).Length; } catch { }
+            foreach (var file in EnumerateFilesSafe(legacy))
+            {
+                try
+                {
+                    legacyCount++;
+                    legacyBytes += new FileInfo(file).Length;
+                }
+                catch { }
+            }
         }
-        return (count, bytes);
+        return (chunks.ChunkCount + legacyCount, chunks.Bytes + legacyBytes);
     }
 
     private static IEnumerable<string> EnumerateFilesSafe(string root)
@@ -189,8 +208,7 @@ public sealed class SnapshotService
     {
         await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read,
             FileShare.ReadWrite | FileShare.Delete, 1024 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
-        using var sha = SHA256.Create();
-        var hash = await sha.ComputeHashAsync(stream, ct);
+        var hash = await SHA256.HashDataAsync(stream, ct);
         return Convert.ToHexString(hash);
     }
 
@@ -216,7 +234,21 @@ public sealed class SnapshotService
         }
     }
 
-    private static string ObjectRoot(string storeRoot) => Path.Combine(storeRoot, "objects");
     private static string ManifestRoot(string storeRoot) => Path.Combine(storeRoot, "manifests");
-    private static string ObjectPath(string storeRoot, string sha256) => Path.Combine(ObjectRoot(storeRoot), sha256[..2], sha256);
+    private static string LegacyObjectRoot(string storeRoot) => Path.Combine(storeRoot, "objects");
+    private static string LegacyObjectPath(string storeRoot, string sha256) =>
+        Path.Combine(LegacyObjectRoot(storeRoot), sha256[..2], sha256);
+
+    private static string FormatBytes(long bytes)
+    {
+        string[] units = ["B", "KB", "MB", "GB", "TB"];
+        double value = bytes;
+        var i = 0;
+        while (value >= 1024 && i < units.Length - 1)
+        {
+            value /= 1024;
+            i++;
+        }
+        return $"{value:0.##} {units[i]}";
+    }
 }
