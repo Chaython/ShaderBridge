@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using ShaderBridge.Models;
 using ShaderBridge.Services;
 
@@ -40,6 +41,21 @@ try
     Assert(statsAfterB.ChunkCount == statsAfterA.ChunkCount + 1,
         $"Only one changed chunk should be added. Before={statsAfterA.ChunkCount}, after={statsAfterB.ChunkCount}.");
 
+    var repeated = Path.Combine(temp, "repeated.bin");
+    var repeatedChunk = Pattern(ChunkStore.ChunkSize, 31);
+    await using (var repeatedOut = File.Create(repeated))
+    {
+        await repeatedOut.WriteAsync(repeatedChunk);
+        await repeatedOut.WriteAsync(repeatedChunk);
+    }
+    var beforeRepeated = chunkStore.GetStats(store);
+    var repeatedChunks = await chunkStore.StoreFileAsync(repeated, store);
+    var afterRepeated = chunkStore.GetStats(store);
+    Assert(repeatedChunks.Count == 2 && repeatedChunks[0].Sha256 == repeatedChunks[1].Sha256,
+        "Identical chunks at different offsets should reference the same content hash.");
+    Assert(afterRepeated.ChunkCount <= beforeRepeated.ChunkCount + 1,
+        "Repeated identical chunks should consume at most one new stored chunk.");
+
     await chunkStore.RehydrateAsync(chunksA, restored, store);
     Assert(File.ReadAllBytes(restored).SequenceEqual(bytesA), "Chunk rehydration did not reproduce original bytes.");
 
@@ -73,6 +89,35 @@ try
     }
     catch (ArgumentException) { mismatchRejected = true; }
     Assert(mismatchRejected, "Volume mismatch must be rejected.");
+
+    var legacyRoot = Path.Combine(temp, "legacy-root");
+    Directory.CreateDirectory(legacyRoot);
+    var legacyData = Pattern(8193, 99);
+    var legacyHash = Convert.ToHexString(SHA256.HashData(legacyData));
+    var legacyObject = Path.Combine(store, "objects", legacyHash[..2], legacyHash);
+    Directory.CreateDirectory(Path.GetDirectoryName(legacyObject)!);
+    await File.WriteAllBytesAsync(legacyObject, legacyData);
+    var legacyManifest = new SnapshotManifest
+    {
+        FormatVersion = 1,
+        Files =
+        [
+            new SnapshotFile
+            {
+                RootName = "Legacy test",
+                RootPath = legacyRoot,
+                RelativePath = "cache.bin",
+                Kind = "Custom",
+                Sha256 = legacyHash,
+                Size = legacyData.Length,
+                LastWriteUtc = DateTime.UtcNow
+            }
+        ]
+    };
+    var restoreResult = await new SnapshotService().RestoreMissingSafeAsync(store, legacyManifest);
+    var legacyRestored = Path.Combine(legacyRoot, "cache.bin");
+    Assert(restoreResult.Restored == 1 && File.ReadAllBytes(legacyRestored).SequenceEqual(legacyData),
+        "Legacy version-1 whole-file snapshots must remain restorable.");
 
     Console.WriteLine("ShaderBridge storage tests passed.");
 }
