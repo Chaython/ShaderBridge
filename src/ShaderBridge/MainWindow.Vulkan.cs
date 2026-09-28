@@ -1,6 +1,8 @@
 using System.Text;
 using System.Windows;
 using Microsoft.Win32;
+using MessageBox = System.Windows.MessageBox;
+using OpenFileDialog = Microsoft.Win32.OpenFileDialog;
 using ShaderBridge.Models;
 
 namespace ShaderBridge;
