@@ -90,6 +90,7 @@ public sealed class VssCheckpointService
             {
                 var shadow = await CreateShadowAsync(volume, ct);
                 state.Shadows.Add(shadow);
+                await PersistStateAsync(storeRoot, state, CancellationToken.None);
                 Log?.Invoke($"VSS checkpoint created for {volume}: {shadow.ShadowId}");
             }
             catch (OperationCanceledException) { throw; }
@@ -104,8 +105,7 @@ public sealed class VssCheckpointService
             throw new InvalidOperationException("VSS could not create a checkpoint for any shader-cache volume. " +
                 string.Join(" | ", state.Errors));
 
-        Directory.CreateDirectory(storeRoot);
-        await File.WriteAllTextAsync(StatePath(storeRoot), JsonSerializer.Serialize(state, JsonOptions), ct);
+        await PersistStateAsync(storeRoot, state, CancellationToken.None);
         return state;
     }
 
@@ -119,12 +119,17 @@ public sealed class VssCheckpointService
         }
 
         var errors = new List<string>();
-        foreach (var shadow in state.Shadows)
+        foreach (var shadow in state.Shadows.ToList())
         {
             ct.ThrowIfCancellationRequested();
             try
             {
                 await DeleteShadowAsync(shadow, ct);
+                state.Shadows.Remove(shadow);
+                if (state.Shadows.Count == 0)
+                    TryDeleteState(storeRoot);
+                else
+                    await PersistStateAsync(storeRoot, state, CancellationToken.None);
                 Log?.Invoke($"Released VSS checkpoint {shadow.ShadowId} for {shadow.VolumeRoot}.");
             }
             catch (OperationCanceledException) { throw; }
@@ -135,8 +140,11 @@ public sealed class VssCheckpointService
         }
 
         if (errors.Count > 0)
+        {
+            await PersistStateAsync(storeRoot, state, CancellationToken.None);
             throw new InvalidOperationException("One or more ShaderBridge VSS checkpoints could not be released: " +
                 string.Join(" | ", errors));
+        }
 
         TryDeleteState(storeRoot);
     }
@@ -235,6 +243,15 @@ public sealed class VssCheckpointService
     }
 
     private static string StatePath(string storeRoot) => Path.Combine(storeRoot, "vss-transition.json");
+
+    private static async Task PersistStateAsync(
+        string storeRoot,
+        VssTransitionState state,
+        CancellationToken ct)
+    {
+        Directory.CreateDirectory(storeRoot);
+        await File.WriteAllTextAsync(StatePath(storeRoot), JsonSerializer.Serialize(state, JsonOptions), ct);
+    }
 
     private static void TryDeleteState(string storeRoot)
     {
