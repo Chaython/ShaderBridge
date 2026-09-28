@@ -1,0 +1,46 @@
+name: Build ShaderBridge
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore .\ShaderBridge.sln
+
+      - name: Build
+        run: dotnet build .\ShaderBridge.sln -c Release --no-restore
+
+      - name: Publish self-contained win-x64
+        run: >-
+          dotnet publish .\src\ShaderBridge\ShaderBridge.csproj
+          -c Release
+          -r win-x64
+          --self-contained true
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:PublishTrimmed=false
+          -o .\artifacts\win-x64
+
+      - name: Upload portable build
+        uses: actions/upload-artifact@v4
+        with:
+          name: ShaderBridge-win-x64
+          path: artifacts\win-x64\
+          if-no-files-found: error
